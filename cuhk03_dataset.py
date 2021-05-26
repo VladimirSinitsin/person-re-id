@@ -5,7 +5,6 @@ import cv2
 import random
 import sys
 
-
 def prepare_data(path):
     f = h5py.File('%s/cuhk-03.mat' % path, 'r')
     labeled = [f['labeled'][0][i] for i in range(len(f['labeled'][0]))]
@@ -35,9 +34,7 @@ def prepare_data(path):
                     with open(filepath, 'wb') as image_file:
                         image_file.write(image)
                 except Exception as e:
-                    print('Find exception: ', e)
                     continue
-
 
 def get_pair(path, set, num_id, positive):
     pair = []
@@ -51,6 +48,7 @@ def get_pair(path, set, num_id, positive):
                 break
 
     for i in range(2):
+        filepath = ''
         while True:
             index = int(random.random() * 10)
             filepath = '%s/labeled/%s/%04d_%02d.jpg' % (path, set, id[i], index)
@@ -60,12 +58,10 @@ def get_pair(path, set, num_id, positive):
         pair.append(filepath)
     return pair
 
-
 def get_num_id(path, set):
     files = os.listdir('%s/labeled/%s' % (path, set))
     files.sort()
     return int(files[-1].split('_')[0]) - int(files[0].split('_')[0]) + 1
-
 
 def read_data(path, set, num_id, image_width, image_height, batch_size):
     batch_images = []
@@ -83,15 +79,15 @@ def read_data(path, set, num_id, image_width, image_height, batch_size):
         labels.append([1., 0.])
         labels.append([0., 1.])
 
-    # for pair in batch_images:
-    #     for p in pair:
-    #         cv2.imshow('img', p)
-    #         key = cv2.waitKey(0)
-    #         if key == 1048603:
-    #             exit()
-
+    '''
+    for pair in batch_images:
+        for p in pair:
+            cv2.imshow('img', p)
+            key = cv2.waitKey(0)
+            if key == 1048603:
+                exit()
+    '''
     return np.transpose(batch_images, (1, 0, 2, 3, 4)), np.array(labels)
-
 
 if __name__ == '__main__':
     prepare_data(sys.argv[1])
