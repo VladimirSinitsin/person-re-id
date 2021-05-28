@@ -12,7 +12,10 @@ import numpy as np
 import tensorflow as tf
 import cv2
 import time
+import shutil
 import os
+
+from pathlib import Path
 from PIL import ImageFont, ImageDraw, Image\
 
 from run import Reid
@@ -20,11 +23,13 @@ from run import Reid
 from importlib import import_module
 
 
+SCRIPT_PATH = str(Path(__file__).parent.absolute())
+
+
 class DetectorAPI:
     def __init__(self, path_to_ckpt):
         self.reid = Reid()
         self.path_to_ckpt = path_to_ckpt
-        # self.module = import_module('run')
         self.detection_graph = tf.Graph()
         with self.detection_graph.as_default():
             od_graph_def = tf.GraphDef()
@@ -97,14 +102,24 @@ class DetectorAPI:
                 cv2.imwrite(past_ppl + '/' + folder + '/' + str(person_no) + '.jpg', img)
                 boxes_cur[int(folder)][0] = box
                 boxes_prev[int(folder)] = -1
-                return
+                return folder
 
         person_no = len(folders)
         os.makedirs(past_ppl + '/' + str(person_no))
         cv2.imwrite(past_ppl + '/' + str(person_no) + '/1.jpg', img)
         boxes_cur.append([box])
 
+        return person_no
+
+
+def make_empty_folder(out_path):
+    print(out_path)
+    # make path if not exists
+    if not os.path.exists(out_path):
+        os.makedirs(out_path)  # empty it if anything there
         return
+    shutil.rmtree(out_path)
+    make_empty_folder(out_path)
 
 
 def iou(box1, box2):
@@ -126,129 +141,142 @@ def iou(box1, box2):
     # return the intersection over union value
     return iou
 
-def out_text(img, xy_coords, text, font, fill):
+
+def draw_text(img, box, num):
+    text_to_draw = f'человек {num}'
+    font_w, font_h = FONT.getsize(text_to_draw)
+    y_min, x_min, y_max, x_max = box
+    xy_coords = (x_min, y_min - font_h - 2)
+
+    cv2.rectangle(img, (x_min - 1, y_min - 1), (x_max + 1, y_max + 1), (0, 255, 0), 2)
+    cv2.rectangle(img, (x_min - 1, y_min - font_h - 1), (x_min + font_w + 1, y_min), (0, 255, 0), -1)
+
     img_pil = Image.fromarray(img)
     draw = ImageDraw.Draw(img_pil)
-    draw.text(xy_coords, text, font=font, fill=fill)
+    draw.text((xy_coords[0] + 1, xy_coords[1] + 1), text_to_draw, font=FONT, fill=(0, 0, 0))
+    draw.text(xy_coords, text_to_draw, font=FONT, fill=(255, 255, 255))
     img = np.array(img_pil)
+
+    # cv2.imwrite(f'{SCRIPT_PATH}/{records}/{count}.jpg', img)
+    # count += 1
+
     return img
 
 
-if __name__ == "__main__":
-    #   model_path = '/path/to/faster_rcnn_inception_v2_coco_2017_11_08/frozen_inference_graph.pb'
-    font = ImageFont.truetype('./Fallout2Cyr.ttf', 16)
-    model_path = './model/frozen_inference_graph.pb'
+#   model_path = '/path/to/faster_rcnn_inception_v2_coco_2017_11_08/frozen_inference_graph.pb'
+FONT = ImageFont.truetype('./Fallout2Cyr.ttf', 16)
+model_path = './model/frozen_inference_graph.pb'
 
-    past_ppl = './past_ppl'
+past_ppl = '/past_ppl'
+records = '/records'
 
-    odapi = DetectorAPI(path_to_ckpt=model_path)
-    threshold = 0.8
-    iou_threshold = 0.6
-    cap = cv2.VideoCapture('./video2.avi')
+make_empty_folder(SCRIPT_PATH + past_ppl)
+make_empty_folder(SCRIPT_PATH + records)
 
-    # maximum number of previous frames to check iou with
-    k = 15
+odapi = DetectorAPI(path_to_ckpt=model_path)
+threshold = 0.8
+iou_threshold = 0.6
+cap = cv2.VideoCapture('./video2.avi')
 
-    # this will store the bounding boxes detected in the previous frame.
-    boxes_prev = []
-    framenum = 1
-    start_time = time.time()  # seconds
-    time240 = 0
-    # iterate over frames
-    while True:
-        _, img = cap.read()
-        img = cv2.resize(img, (1280, 720))
+# maximum number of previous frames to check iou with
+k = 15
 
-        boxes, scores, classes, num = odapi.process_frame(img)
-        boxes_cur = []
-        for box in boxes_prev:
-            if len(box) < k:
-                boxes_cur.append([-1] + box)
-            else:
-                boxes_cur.append([-1] + box[0:k - 1])
+# this will store the bounding boxes detected in the previous frame.
+boxes_prev = []
+framenum = 1
+start_time = time.time()  # seconds
+time240 = 0
 
-        for i in range(len(boxes)):
-            # Class 1 represents human
-            if classes[i] == 1 and scores[i] > threshold:
-                box = boxes[i]
-                x_min, y_min, x_max, y_max = box
+count = 0
 
-                # draw the bounding box on the image
-                # cv2.rectangle(img, (box[1], box[0]), (box[3], box[2]), (255, 0, 0), 2)
+# iterate over frames
+while True:
+    _, source_img = cap.read()
+    img = cv2.resize(source_img, (1280, 720))
 
-                cropped_img = img[x_min:x_max, y_min:y_max]
+    boxes, scores, classes, num = odapi.process_frame(img)
+    boxes_cur = []
+    for box in boxes_prev:
+        boxes_cur.append([-1] + box[:k - 1])
 
-                maxthreshold = -1
-                maxindex = 101  # the index in boxes_prev indicating the matching person from the previous k frames.
-                maxframe = -1
+    for i in range(len(boxes)):
+        # Class 1 represents human
+        if classes[i] == 1 and scores[i] > threshold:
+            box = boxes[i]
+            y_min, x_min, y_max, x_max = box
 
-                for j in range(len(boxes_prev)):
-                    # Every boxes_prev[j] denotes a person. It is a list of the last k positions of the person j.
+            # draw the bounding box on the image
+            # cv2.rectangle(img, (box[1], box[0]), (box[3], box[2]), (255, 0, 0), 2)
 
-                    # This previous person has already been alloted to another person in the current frame
-                    if boxes_prev[j] == -1:
+            cropped_img = img[y_min:y_max, x_min:x_max]
+
+            maxthreshold = -1
+            maxindex = 101  # the index in boxes_prev indicating the matching person from the previous k frames.
+            maxframe = -1
+
+            for j in range(len(boxes_prev)):
+                # Every boxes_prev[j] denotes a person. It is a list of the last k positions of the person j.
+
+                # This previous person has already been alloted to another person in the current frame
+                if boxes_prev[j] == -1:
+                    continue
+
+                for kk in range(len(boxes_prev[j])):
+                    if boxes_prev[j][kk] == -1:  # person was not detected in frame kk
                         continue
+                    curr_iou = iou(boxes_prev[j][kk], box)
+                    if curr_iou > maxthreshold and curr_iou > iou_threshold:
+                        maxthreshold = curr_iou
+                        maxindex = j
+                        maxframe = kk
 
-                    for kk in range(len(boxes_prev[j])):
-                        if boxes_prev[j][kk] == -1:  # person was not detected in frame kk
-                            continue
-                        curr_iou = iou(boxes_prev[j][kk], box)
-                        if curr_iou > maxthreshold and curr_iou > iou_threshold:
-                            maxthreshold = curr_iou
-                            maxindex = j
-                            maxframe = kk
+            if maxthreshold != -1:
+                # Was the tracking correct?
+                b = boxes_prev[maxindex][maxframe]
+                old_img = img[b[0]:b[2], b[1]:b[3]]
+                cur_img = cropped_img
 
-                if maxthreshold != -1:
-                    # Was the tracking correct?
-                    b = boxes_prev[maxindex][maxframe]
-                    old_img = img[b[0]:b[2], b[1]:b[3]]
-                    cur_img = cropped_img
+                h, w, d = cur_img.shape
+                old_img = cv2.resize(old_img, (w, h))
 
-                    r, c, d = cur_img.shape
-                    old_img = cv2.resize(old_img, (c, r))
+                res = cv2.matchTemplate(old_img, cur_img, cv2.TM_CCOEFF_NORMED)
+                if res[0][0] < 0.45:
+                    # Tracking was incorrect
+                    maxthreshold = -1
 
-                    res = cv2.matchTemplate(old_img, cur_img, cv2.TM_CCOEFF_NORMED)
-                    if res[0][0] < 0.45:
-                        # Tracking was incorrect
-                        maxthreshold = -1
+            # maxthreshold != -1 at this point means this person is the same as prevbox in the last frame.
+            if maxthreshold != -1:
+                # print('tracked ###########')
+                boxes_cur[maxindex][0] = box
+                boxes_prev[maxindex] = -1
 
-                # maxthreshold != -1 at this point means this person is the same as prevbox in the last frame.
-                if maxthreshold != -1:
-                    # print('tracked ###########')
-                    boxes_cur[maxindex][0] = box
-                    boxes_prev[maxindex] = -1
+                # also add this image of the person to his previous images
+                person_no = len(os.listdir(SCRIPT_PATH + past_ppl + '/' + str(maxindex))) + 1
+                cv2.imwrite(SCRIPT_PATH + past_ppl + '/' + str(maxindex) + '/' + str(person_no) + '.jpg', cropped_img)
+                img = draw_text(img, box, maxindex)
+            else:
+                # The person was not present in the previous frame. Add him to a new folder.
+                # The folder name should be equal to the index of the person in box_cur.
+                person_no = odapi.find(cropped_img, boxes_cur, boxes_prev, box)
+                img = draw_text(img, box, person_no)
 
-                    # also add this image of the person to his previous images
-                    person_no = len(os.listdir(past_ppl + '/' + str(maxindex))) + 1
+    num_ppl = len(os.listdir(SCRIPT_PATH + past_ppl))
+    # print('#People:   ' + str(num_ppl))
+    print('Time for ' + str(framenum) + ' frames: (seconds)')
+    print(time.time() - start_time)
+    print('\n')
 
-                    cv2.rectangle(img, (y_min + 1, x_min + 1), (y_max - 1, x_max - 1), (0, 255, 0), 2)
-                    TEXT_TO_DRAW = f'человек {person_no}'
-                    font_w, font_h = font.getsize(TEXT_TO_DRAW)
-                    img = out_text(img, (x_min, y_min - font_h - 2), TEXT_TO_DRAW, font=font, fill=(255, 255, 255, 1))
+    framenum += 1
+    boxes_prev = boxes_cur
 
-                    cv2.imwrite(past_ppl + '/' + str(maxindex) + '/' + str(person_no) + '.jpg', cropped_img)
-                else:
-                    # The person was not present in the previous frame. Add him to a new folder.
-                    # The folder name should be equal to the index of the person in box_cur.
-                    odapi.find(cropped_img, boxes_cur, boxes_prev, box)
+    if framenum == 240:
+        time240 = time.time() - start_time
 
-        num_ppl = len(os.listdir(past_ppl))
-        # print('#People:   ' + str(num_ppl))
-        print('Time for ' + str(framenum) + ' frames: (seconds)')
-        print(time.time() - start_time)
+    if framenum > 240:
+        print('Time for 240 frame:' + str(time240))
         print('\n')
 
-        framenum += 1
-        boxes_prev = boxes_cur
-
-        if framenum == 240:
-            time240 = time.time() - start_time
-
-        if framenum > 240:
-            print('Time for 240 frame:' + str(time240))
-            print('\n')
-
-        cv2.imshow("preview", img)
-        key = cv2.waitKey(1)
-        if key & 0xFF == ord('q'):
-            break
+    cv2.imshow("preview", img)
+    key = cv2.waitKey(1)
+    if key & 0xFF == ord('q'):
+        break
