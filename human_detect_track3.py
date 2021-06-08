@@ -16,7 +16,8 @@ import shutil
 import os
 
 from pathlib import Path
-from PIL import ImageFont, ImageDraw, Image\
+from PIL import ImageFont, ImageDraw, Image
+from datetime import datetime
 
 from run import Reid
 # from run import main2
@@ -122,6 +123,13 @@ def make_empty_folder(out_path):
     make_empty_folder(out_path)
 
 
+def save_frame(img):
+    current_date_str = datetime.now().strftime('%Y-%m-%d')
+    current_time_str = datetime.now().strftime('%H-%M-%S_%f')
+    file_name = f'{current_date_str}_{current_time_str}.jpg'
+    cv2.imwrite(SCRIPT_PATH + records + f'/{file_name}', img)
+
+
 def iou(box1, box2):
     xa = max(box1[1], box2[1])
     ya = max(box1[0], box2[0])
@@ -186,8 +194,6 @@ boxes_prev = []
 framenum = 1
 start_time = time.time()  # seconds
 time240 = 0
-
-count = 0
 
 # iterate over frames
 while True:
@@ -277,6 +283,9 @@ while True:
         print('\n')
 
     cv2.imshow("preview", img)
+
+    save_frame(img)
+
     key = cv2.waitKey(1)
     if key & 0xFF == ord('q'):
         break
