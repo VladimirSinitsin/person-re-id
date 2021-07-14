@@ -16,8 +16,11 @@ from run import Reid
 random.seed(111)
 
 SCRIPT_PATH = str(Path(__file__).parent.absolute())
-video_file_name = 'video2.avi'
+# video_file_name = 'video2.avi'
 # video_file_name = 'me.mp4'
+# video_file_name = 'we.mp4'
+# video_file_name = 'we_2.mp4'
+video_file_name = 'me_2.mp4'
 colors = {0: (0, 255, 0),
           1: (38, 0, 237),
           2: (143, 39, 145),
@@ -143,6 +146,8 @@ def new_color():
 
 def draw_text(img, box, num):
     num = int(num)
+    if num not in [0, 2]: return img
+    num = 0
     text_to_draw = f'человек {num}'
     font_w, font_h = FONT.getsize(text_to_draw)
     y_min, x_min, y_max, x_max = box

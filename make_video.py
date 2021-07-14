@@ -5,7 +5,7 @@ import progressbar
 
 path_in = 'records/'
 path_out = ''
-name = 'recording1_marked.avi'
+name = 'recording3_marked.avi'
 fps = 24.0
 
 def make_video(path_in, path_out, name):
